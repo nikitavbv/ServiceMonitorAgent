@@ -1,7 +1,18 @@
 package main
 
-import "fmt"
+import "log"
 
 func main() {
-	fmt.Println("hello world")
+	if !checkIfConfigFileExists() {
+		log.Fatalln("Config file is not found. Consider creating one at " + configFileName)
+	}
+
+	loadConfigFile()
+	loadAgentState()
+	if isAgentRegisterRequired() {
+		registerAgent()
+	}
+	initAgent()
+
+	startTrackingCycle()
 }
