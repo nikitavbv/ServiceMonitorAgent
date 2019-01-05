@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"io/ioutil"
 	"log"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -34,6 +36,8 @@ func runTrackingIteration() {
 			result = monitorMemory(targetMap)
 		case "io":
 			result = monitorIO(targetMap)
+		case "diskUsage":
+			result = monitorDiskUsage(targetMap)
 		default:
 			log.Println("Unknown tracking type:", monitorType)
 		}
@@ -131,6 +135,36 @@ func monitorIO(params map[string]interface{}) map[string]interface{} {
 			"sectorsRead":    sectorsRead,
 			"sectorsWritten": sectorsWritten,
 			"timestamp":      timestamp,
+		}
+	}
+
+	return result
+}
+
+func monitorDiskUsage(params map[string]interface{}) map[string]interface{} {
+	result := map[string]interface{}{}
+	cmd := exec.Command("df", "-x", "squashfs", "-x", "devtmpfs", "-x", "tmpfs", "-x", "fuse", "--output=source,size,used")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		log.Println(err)
+		return result
+	}
+
+	diskUsageDataLines := strings.Split(out.String(), "\n")
+	for _, line := range diskUsageDataLines {
+		if line == "" || strings.HasPrefix(line, "Filesystem") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		filesystem := fields[0]
+		total := fields[1]
+		used := fields[2]
+		result[filesystem] = map[string]interface{}{
+			"total": total,
+			"used":  used,
 		}
 	}
 
