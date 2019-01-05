@@ -11,6 +11,7 @@ import (
 )
 
 var ioPrevState = map[string]map[string]interface{}{}
+var cpuPrevState = map[string]map[string]interface{}{}
 
 func runTrackingIteration() {
 	_, hasMonitorTargets := config["monitor"]
@@ -38,6 +39,8 @@ func runTrackingIteration() {
 			result = monitorIO(targetMap)
 		case "diskUsage":
 			result = monitorDiskUsage(targetMap)
+		case "cpu":
+			result = monitorCPUUsage(targetMap)
 		default:
 			log.Println("Unknown tracking type:", monitorType)
 		}
@@ -160,13 +163,87 @@ func monitorDiskUsage(params map[string]interface{}) map[string]interface{} {
 
 		fields := strings.Fields(line)
 		filesystem := fields[0]
-		total := fields[1]
-		used := fields[2]
+		total, _ := strconv.Atoi(fields[1])
+		used, _ := strconv.Atoi(fields[2])
 		result[filesystem] = map[string]interface{}{
 			"total": total,
 			"used":  used,
 		}
 	}
 
+	return result
+}
+
+func monitorCPUUsage(params map[string]interface{}) map[string]interface{} {
+	// http://man7.org/linux/man-pages/man5/proc.5.html
+	result := map[string]interface{}{}
+
+	cpuData, _ := ioutil.ReadFile("/proc/stat")
+	cpuDataLines := strings.Split(string(cpuData), "\n")
+	timestamp := time.Now().UnixNano() / 1000000
+	for _, line := range cpuDataLines {
+		if line == "" {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if !strings.HasPrefix(fields[0], "cpu") {
+			continue
+		}
+		cpu := fields[0]
+		user, _ := strconv.Atoi(fields[1])
+		nice, _ := strconv.Atoi(fields[2])
+		system, _ := strconv.Atoi(fields[3])
+		idle, _ := strconv.Atoi(fields[4])
+		iowait, _ := strconv.Atoi(fields[5])
+		irq, _ := strconv.Atoi(fields[6])
+		softirq, _ := strconv.Atoi(fields[7])
+		steal, _ := strconv.Atoi(fields[8])
+		guest, _ := strconv.Atoi(fields[9])
+		guestNice, _ := strconv.Atoi(fields[10])
+
+		prevState, cpuPrevStateExists := cpuPrevState[cpu]
+		if cpuPrevStateExists {
+			prevUser := prevState["user"].(int)
+			prevNice := prevState["nice"].(int)
+			prevSystem := prevState["system"].(int)
+			prevIdle := prevState["idle"].(int)
+			prevIOWait := prevState["iowait"].(int)
+			prevIrq := prevState["irq"].(int)
+			prevSoftIrq := prevState["softirq"].(int)
+			prevSteal := prevState["steal"].(int)
+			prevGuest := prevState["guest"].(int)
+			prevGuestNice := prevState["guestNice"].(int)
+			prevTimestamp := prevState["timestamp"].(int64)
+
+			result[cpu] = map[string]interface{}{
+				"user":      int64(user-prevUser) / ((timestamp - prevTimestamp) / 1000),
+				"nice":      int64(nice-prevNice) / ((timestamp - prevTimestamp) / 1000),
+				"system":    int64(system-prevSystem) / ((timestamp - prevTimestamp) / 1000),
+				"idle":      int64(idle-prevIdle) / ((timestamp - prevTimestamp) / 1000),
+				"iowait":    int64(iowait-prevIOWait) / ((timestamp - prevTimestamp) / 1000),
+				"irq":       int64(irq-prevIrq) / ((timestamp - prevTimestamp) / 1000),
+				"softirq":   int64(softirq-prevSoftIrq) / ((timestamp - prevTimestamp) / 1000),
+				"guest":     int64(guest-prevGuest) / ((timestamp - prevTimestamp) / 1000),
+				"steal":     int64(steal-prevSteal) / ((timestamp - prevTimestamp) / 1000),
+				"guestNice": int64(prevGuestNice-guestNice) / ((timestamp - prevTimestamp) / 1000),
+			}
+		}
+		cpuPrevState[cpu] = map[string]interface{}{
+			"user":      user,
+			"nice":      nice,
+			"system":    system,
+			"idle":      idle,
+			"iowait":    iowait,
+			"irq":       irq,
+			"softirq":   softirq,
+			"steal":     steal,
+			"guest":     guest,
+			"guestNice": guestNice,
+			"timestamp": timestamp,
+		}
+	}
+
+	log.Println(result)
 	return result
 }
