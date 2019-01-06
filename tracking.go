@@ -51,6 +51,9 @@ func runTrackingIteration() {
 		default:
 			log.Println("Unknown tracking type:", monitorType)
 		}
+		if len(result) == 0 {
+			continue
+		}
 		result["type"] = monitorType
 		monitorTag, hasTag := targetMap["tag"]
 		if hasTag {
