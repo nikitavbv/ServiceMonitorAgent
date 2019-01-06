@@ -12,6 +12,7 @@ import (
 
 var ioPrevState = map[string]map[string]interface{}{}
 var cpuPrevState = map[string]map[string]interface{}{}
+var networkPrevState = map[string]map[string]interface{}{}
 
 func runTrackingIteration() {
 	_, hasMonitorTargets := config["monitor"]
@@ -43,6 +44,8 @@ func runTrackingIteration() {
 			result = monitorCPUUsage(targetMap)
 		case "uptime":
 			result = monitorUptime(targetMap)
+		case "network":
+			result = monitorNetwork(targetMap)
 		default:
 			log.Println("Unknown tracking type:", monitorType)
 		}
@@ -257,5 +260,41 @@ func monitorUptime(params map[string]interface{}) map[string]interface{} {
 	fields := strings.Fields(string(uptimeData))
 	result["uptime"] = fields[0]
 
+	return result
+}
+
+func monitorNetwork(params map[string]interface{}) map[string]interface{} {
+	result := map[string]interface{}{}
+
+	networkData, _ := ioutil.ReadFile("/proc/net/dev")
+	networkDataLines := strings.Split(string(networkData), "\n")
+	timestamp := time.Now().UnixNano() / 1000000
+	for _, line := range networkDataLines {
+		if line == "" || strings.Contains(line, "|") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		deviceName := fields[0]
+		bytesReceived, _ := strconv.Atoi(fields[1])
+		bytesSent, _ := strconv.Atoi(fields[9])
+
+		devicePrevState, devicePrevStateExists := networkPrevState[deviceName]
+		if devicePrevStateExists {
+			prevBytesReceived := devicePrevState["bytesReceived"].(int)
+			prevBytesSent := devicePrevState["bytesSent"].(int)
+			prevTimestamp := devicePrevState["timestamp"].(int64)
+
+			result[deviceName] = map[string]interface{}{
+				"bytesSent":     int64(bytesSent-prevBytesSent) / ((timestamp - prevTimestamp) / 1000),
+				"bytesReceived": int64(bytesReceived-prevBytesReceived) / ((timestamp - prevTimestamp) / 1000),
+			}
+		}
+		networkPrevState[deviceName] = map[string]interface{}{
+			"bytesReceived": bytesReceived,
+			"bytesSent":     bytesSent,
+			"timestamp":     timestamp,
+		}
+	}
 	return result
 }
