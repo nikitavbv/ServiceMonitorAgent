@@ -46,6 +46,8 @@ func runTrackingIteration() {
 			result = monitorUptime(targetMap)
 		case "network":
 			result = monitorNetwork(targetMap)
+		case "docker":
+			result = monitorDocker(targetMap)
 		default:
 			log.Println("Unknown tracking type:", monitorType)
 		}
@@ -296,5 +298,33 @@ func monitorNetwork(params map[string]interface{}) map[string]interface{} {
 			"timestamp":     timestamp,
 		}
 	}
+	return result
+}
+
+func monitorDocker(params map[string]interface{}) map[string]interface{} {
+	result := map[string]interface{}{}
+
+	cmd := exec.Command("docker", "ps", "--format", "{{.Image}}|{{.Status}}")
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	err := cmd.Run()
+	if err != nil {
+		log.Println(err)
+		return result
+	}
+
+	dockerDataLines := strings.Split(out.String(), "\n")
+	for _, line := range dockerDataLines {
+		if line == "" || strings.HasPrefix(line, "CONTAINER") {
+			continue
+		}
+
+		fields := strings.Split(line, "|")
+		containerStatus := fields[0]
+		containerName := fields[1]
+
+		result[containerName] = containerStatus
+	}
+
 	return result
 }
