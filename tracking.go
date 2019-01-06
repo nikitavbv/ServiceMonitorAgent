@@ -2,17 +2,25 @@ package main
 
 import (
 	"bytes"
+	"database/sql"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os/exec"
 	"strconv"
 	"strings"
 	"time"
+
+	_ "github.com/go-sql-driver/mysql"
 )
+
+var nginxStatsClient = &http.Client{}
 
 var ioPrevState = map[string]map[string]interface{}{}
 var cpuPrevState = map[string]map[string]interface{}{}
 var networkPrevState = map[string]map[string]interface{}{}
+var nginxPrevState = map[string]map[string]interface{}{}
+var mysqlPrevState = map[string]map[string]interface{}{}
 
 func runTrackingIteration() {
 	_, hasMonitorTargets := config["monitor"]
@@ -48,6 +56,10 @@ func runTrackingIteration() {
 			result = monitorNetwork(targetMap)
 		case "docker":
 			result = monitorDocker(targetMap)
+		case "nginx":
+			result = monitorNGINX(targetMap)
+		case "mysql":
+			result = monitorMySQL(targetMap)
 		default:
 			log.Println("Unknown tracking type:", monitorType)
 		}
@@ -358,5 +370,84 @@ func monitorDocker(params map[string]interface{}) map[string]interface{} {
 	if len(result["containers"].([]map[string]interface{})) == 0 {
 		return map[string]interface{}{}
 	}
+	return result
+}
+
+func monitorNGINX(params map[string]interface{}) map[string]interface{} {
+	// http://nginx.org/en/docs/http/ngx_http_stub_status_module.html
+	result := map[string]interface{}{}
+	endpoint := params["endpoint"].(string)
+
+	response, err := http.Get(endpoint)
+	if err != nil {
+		log.Println("Error while nginx stats request: ", err)
+		return result
+	}
+
+	defer response.Body.Close()
+	contents, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		log.Println("Error while reading nginx response", err)
+		return result
+	}
+
+	responseLines := strings.Split(string(contents), "\n")
+	requests, _ := strconv.Atoi(strings.Fields(responseLines[2])[2])
+	prevState, nginxPrevStateExists := nginxPrevState[endpoint]
+	timestamp := time.Now().UnixNano() / 1000000
+	if nginxPrevStateExists {
+		prevRequests := prevState["requests"].(int)
+		prevTimestamp := prevState["timestamp"].(int64)
+
+		result["requests"] = float64(requests-prevRequests) / float64((timestamp-prevTimestamp)/1000)
+	}
+	nginxPrevState[endpoint] = map[string]interface{}{
+		"requests":  requests,
+		"timestamp": timestamp,
+	}
+
+	return result
+}
+
+func monitorMySQL(params map[string]interface{}) map[string]interface{} {
+	result := map[string]interface{}{}
+	connection := params["connection"].(string)
+
+	db, err := sql.Open("mysql", connection)
+	if err != nil {
+		log.Println("Failed to connect to mysql database:", err)
+		return result
+	}
+	defer db.Close()
+
+	rows, err := db.Query("SHOW GLOBAL STATUS LIKE 'Questions'")
+	if err != nil {
+		log.Println("Error while making SQL query:", err)
+		return result
+	}
+
+	var varName, value string
+	prevState, mysqlPrevStateExists := mysqlPrevState[connection]
+	timestamp := time.Now().UnixNano() / 1000000
+	for rows.Next() {
+		err = rows.Scan(&varName, &value)
+		if err != nil {
+			log.Println("Error while reading sql result:", err)
+			return result
+		}
+		nValue, _ := strconv.ParseFloat(value, 64)
+		if mysqlPrevStateExists {
+			prevValue, _ := strconv.ParseFloat(prevState[varName].(string), 64)
+			prevTimestamp := prevState["timestamp"].(int64)
+			result[strings.ToLower(varName)] = float64(nValue-prevValue) / float64((timestamp-prevTimestamp)/1000)
+		} else {
+			mysqlPrevState[connection] = map[string]interface{}{}
+			prevState = mysqlPrevState[connection]
+		}
+		mysqlPrevState[connection][varName] = value
+	}
+	prevState["timestamp"] = timestamp
+	mysqlPrevState[connection] = prevState
+
 	return result
 }
