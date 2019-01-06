@@ -109,6 +109,7 @@ func monitorMemory(params map[string]interface{}) map[string]interface{} {
 func monitorIO(params map[string]interface{}) map[string]interface{} {
 	// https://www.kernel.org/doc/Documentation/iostats.txt
 	result := map[string]interface{}{}
+	result["devices"] = []map[string]interface{}{}
 
 	ioData, _ := ioutil.ReadFile("/proc/diskstats")
 	ioDataLines := strings.Split(string(ioData), "\n")
@@ -139,10 +140,11 @@ func monitorIO(params map[string]interface{}) map[string]interface{} {
 			bytesReadPerSecond := (bytesRead) / ((timestamp - prevTimestamp) / 1000)
 			bytesWrittenPerSecond := (bytesWritten) / ((timestamp - prevTimestamp) / 1000)
 
-			result[deviceName] = map[string]interface{}{
-				"read":  bytesReadPerSecond,
-				"write": bytesWrittenPerSecond,
-			}
+			result["devices"] = append(result["devices"].([]map[string]interface{}), map[string]interface{}{
+				"device": deviceName,
+				"read":   bytesReadPerSecond,
+				"write":  bytesWrittenPerSecond,
+			})
 		}
 		ioPrevState[deviceName] = map[string]interface{}{
 			"sectorsRead":    sectorsRead,
@@ -151,11 +153,16 @@ func monitorIO(params map[string]interface{}) map[string]interface{} {
 		}
 	}
 
+	if len(result["devices"].([]map[string]interface{})) == 0 {
+		return map[string]interface{}{}
+	}
 	return result
 }
 
 func monitorDiskUsage(params map[string]interface{}) map[string]interface{} {
 	result := map[string]interface{}{}
+	result["filesystems"] = []map[string]interface{}{}
+
 	cmd := exec.Command("df", "-x", "squashfs", "-x", "devtmpfs", "-x", "tmpfs", "-x", "fuse", "--output=source,size,used")
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -175,18 +182,23 @@ func monitorDiskUsage(params map[string]interface{}) map[string]interface{} {
 		filesystem := fields[0]
 		total, _ := strconv.Atoi(fields[1])
 		used, _ := strconv.Atoi(fields[2])
-		result[filesystem] = map[string]interface{}{
-			"total": total,
-			"used":  used,
-		}
+		result["filesystems"] = append(result["filesystems"].([]map[string]interface{}), map[string]interface{}{
+			"filesystem": filesystem,
+			"total":      total,
+			"used":       used,
+		})
 	}
 
+	if len(result["filesystems"].([]map[string]interface{})) == 0 {
+		return map[string]interface{}{}
+	}
 	return result
 }
 
 func monitorCPUUsage(params map[string]interface{}) map[string]interface{} {
 	// http://man7.org/linux/man-pages/man5/proc.5.html
 	result := map[string]interface{}{}
+	result["cpus"] = []map[string]interface{}{}
 
 	cpuData, _ := ioutil.ReadFile("/proc/stat")
 	cpuDataLines := strings.Split(string(cpuData), "\n")
@@ -226,7 +238,8 @@ func monitorCPUUsage(params map[string]interface{}) map[string]interface{} {
 			prevGuestNice := prevState["guestNice"].(int)
 			prevTimestamp := prevState["timestamp"].(int64)
 
-			result[cpu] = map[string]interface{}{
+			result["cpus"] = append(result["cpus"].([]map[string]interface{}), map[string]interface{}{
+				"cpu":       cpu,
 				"user":      int64(user-prevUser) / ((timestamp - prevTimestamp) / 1000),
 				"nice":      int64(nice-prevNice) / ((timestamp - prevTimestamp) / 1000),
 				"system":    int64(system-prevSystem) / ((timestamp - prevTimestamp) / 1000),
@@ -237,7 +250,7 @@ func monitorCPUUsage(params map[string]interface{}) map[string]interface{} {
 				"guest":     int64(guest-prevGuest) / ((timestamp - prevTimestamp) / 1000),
 				"steal":     int64(steal-prevSteal) / ((timestamp - prevTimestamp) / 1000),
 				"guestNice": int64(prevGuestNice-guestNice) / ((timestamp - prevTimestamp) / 1000),
-			}
+			})
 		}
 		cpuPrevState[cpu] = map[string]interface{}{
 			"user":      user,
@@ -254,6 +267,9 @@ func monitorCPUUsage(params map[string]interface{}) map[string]interface{} {
 		}
 	}
 
+	if len(result["cpus"].([]map[string]interface{})) == 0 {
+		return map[string]interface{}{}
+	}
 	return result
 }
 
@@ -270,6 +286,7 @@ func monitorUptime(params map[string]interface{}) map[string]interface{} {
 
 func monitorNetwork(params map[string]interface{}) map[string]interface{} {
 	result := map[string]interface{}{}
+	result["devices"] = []map[string]interface{}{}
 
 	networkData, _ := ioutil.ReadFile("/proc/net/dev")
 	networkDataLines := strings.Split(string(networkData), "\n")
@@ -290,10 +307,11 @@ func monitorNetwork(params map[string]interface{}) map[string]interface{} {
 			prevBytesSent := devicePrevState["bytesSent"].(int)
 			prevTimestamp := devicePrevState["timestamp"].(int64)
 
-			result[deviceName] = map[string]interface{}{
+			result["devices"] = append(result["devices"].([]map[string]interface{}), map[string]interface{}{
+				"device":        deviceName,
 				"bytesSent":     int64(bytesSent-prevBytesSent) / ((timestamp - prevTimestamp) / 1000),
 				"bytesReceived": int64(bytesReceived-prevBytesReceived) / ((timestamp - prevTimestamp) / 1000),
-			}
+			})
 		}
 		networkPrevState[deviceName] = map[string]interface{}{
 			"bytesReceived": bytesReceived,
@@ -301,11 +319,16 @@ func monitorNetwork(params map[string]interface{}) map[string]interface{} {
 			"timestamp":     timestamp,
 		}
 	}
+
+	if len(result["devices"].([]map[string]interface{})) == 0 {
+		return map[string]interface{}{}
+	}
 	return result
 }
 
 func monitorDocker(params map[string]interface{}) map[string]interface{} {
 	result := map[string]interface{}{}
+	result["containers"] = []map[string]interface{}{}
 
 	cmd := exec.Command("docker", "ps", "--format", "{{.Image}}|{{.Status}}")
 	var out bytes.Buffer
@@ -323,11 +346,17 @@ func monitorDocker(params map[string]interface{}) map[string]interface{} {
 		}
 
 		fields := strings.Split(line, "|")
-		containerStatus := fields[0]
-		containerName := fields[1]
+		containerStatus := fields[1]
+		containerName := fields[0]
 
-		result[containerName] = containerStatus
+		result["containers"] = append(result["containers"].([]map[string]interface{}), map[string]interface{}{
+			"containerName": containerName,
+			"status":        containerStatus,
+		})
 	}
 
+	if len(result["containers"].([]map[string]interface{})) == 0 {
+		return map[string]interface{}{}
+	}
 	return result
 }
