@@ -41,6 +41,8 @@ func runTrackingIteration() {
 			result = monitorDiskUsage(targetMap)
 		case "cpu":
 			result = monitorCPUUsage(targetMap)
+		case "uptime":
+			result = monitorUptime(targetMap)
 		default:
 			log.Println("Unknown tracking type:", monitorType)
 		}
@@ -244,6 +246,16 @@ func monitorCPUUsage(params map[string]interface{}) map[string]interface{} {
 		}
 	}
 
-	log.Println(result)
+	return result
+}
+
+func monitorUptime(params map[string]interface{}) map[string]interface{} {
+	// http://man7.org/linux/man-pages/man5/proc.5.html
+	result := map[string]interface{}{}
+
+	uptimeData, _ := ioutil.ReadFile("/proc/uptime")
+	fields := strings.Fields(string(uptimeData))
+	result["uptime"] = fields[0]
+
 	return result
 }
