@@ -1,0 +1,15 @@
+[GolangSources]
+files = *.go
+bears = LineLengthBear, GoErrCheckBear, GoImportsBear, GoLintBear, GoReturnsBear, GoVetBear, GofmtBear 
+max_line_length = 120
+use_spaces = False
+
+[commit]
+bears = GitCommitBear
+shortlog_trailing_period = False
+shortlog_regex = (?:fixup!\s*)?(\w*)(\(([\w\$\.\*/-]*)\))?\: (.*)
+shortlog_length = 80
+
+[LineCounting]
+bears = LineCountBear
+max_lines_per_file = 1000
