@@ -133,7 +133,8 @@ func monitorIO(params map[string]interface{}) map[string]interface{} {
 		fields := strings.Fields(line)
 		deviceName := fields[2]
 		// Block size according to:
-		// https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/linux/types.h?id=v4.4-rc6#n121
+		// https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git
+		// /tree/include/linux/types.h?id=v4.4-rc6#n121
 		deviceBlockSize := int64(512)
 		sectorsRead, _ := strconv.Atoi(fields[5])
 		sectorsWritten, _ := strconv.Atoi(fields[9])
@@ -175,7 +176,11 @@ func monitorDiskUsage(params map[string]interface{}) map[string]interface{} {
 	result := map[string]interface{}{}
 	result["filesystems"] = []map[string]interface{}{}
 
-	cmd := exec.Command("df", "-x", "squashfs", "-x", "devtmpfs", "-x", "tmpfs", "-x", "fuse", "--output=source,size,used")
+	cmd := exec.Command(
+		"df", "-x", "squashfs", "-x", "devtmpfs",
+		"-x", "tmpfs", "-x", "fuse",
+		"--output=source,size,used",
+	)
 	var out bytes.Buffer
 	cmd.Stdout = &out
 	err := cmd.Run()

@@ -37,7 +37,8 @@ func getIPV4() string {
 			}
 
 			if len(ip.To4()) == net.IPv4len {
-				if !ip.IsUnspecified() && !ip.IsLoopback() && !ip.IsMulticast() && !ip.IsInterfaceLocalMulticast() && !ip.IsLinkLocalMulticast() && !ip.IsLinkLocalUnicast() {
+				if !ip.IsUnspecified() && !ip.IsLoopback() && !ip.IsMulticast() &&
+					!ip.IsInterfaceLocalMulticast() && !ip.IsLinkLocalMulticast() && !ip.IsLinkLocalUnicast() {
 					addresses = append(addresses, ip.String())
 				}
 			}
